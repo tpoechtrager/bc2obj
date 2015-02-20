@@ -11,7 +11,7 @@
 
 #### SUPPORTED OPTIONS ####
 
-    -out-dir                          : specifiy an output directory (native/ by default)
+    -out-dir                          : specify an output directory (native/ by default)
     -generate-debug-symbols           : generate debug symbols
     -disable-optimizations            : disable optimizations
     -disable-inline-pass              : disable the inline pass
