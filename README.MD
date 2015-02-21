@@ -7,7 +7,7 @@
 
 #### USAGE: ####
 
-`./bc2obj 1.o 2.o 3.o [...]`
+`./bc2obj 1.o 2.o 3.o 4.a [...]`
 
 #### SUPPORTED OPTIONS ####
 

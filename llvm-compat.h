@@ -34,10 +34,20 @@
   ((LLVM_VERSION_MAJOR * 10000 + LLVM_VERSION_MINOR * 100) ==                  \
    (major * 10000 + minor * 100))
 
+#ifdef _WIN32
+#define PATH_DIV '\\'
+#else
+#define PATH_DIV '/'
+#endif
+
 #if !LLVM_VERSION_AT_LEAST(3, 6)
 #define compile_to_file(name, disableOpt, disableInline, disableGVNLoadPRE,    \
                         disableVectorization, errMsg)                          \
   compile_to_file(name, disableOpt, disableInline, disableGVNLoadPRE, errMsg)
+
+#define compile(length, disableOpt, disableInline, disableGVNLoadPRE,          \
+                disableVectorization, errMsg)                                  \
+  compile(length, disableOpt, disableInline, disableGVNLoadPRE, errMsg)
 #else
 #define addModule(Module, errMsg) addModule(Module)
 #endif
@@ -58,8 +68,18 @@ static auto getMemBuffer = [](auto &Buf) {
 #endif
 };
 
-#ifdef _WIN32
-#define PATH_DIV '\\'
-#else
-#define PATH_DIV '/'
-#endif
+static inline std::string
+getObjName(const llvm::object::Archive::child_iterator &child) {
+  llvm::StringRef ObjName;
+  llvm::ErrorOr<llvm::StringRef> Name = child->getName();
+  if (Name.getError())
+    ObjName = "<unknown>";
+  else
+    ObjName = Name.get();
+  return std::string(ObjName.data(), ObjName.size());
+}
+
+static inline const char *getFileName(const char *Path) {
+  const char *FileName = std::strrchr(Path, PATH_DIV);
+  return FileName ? FileName + 1 : Path;
+}

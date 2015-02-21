@@ -29,6 +29,7 @@ all: bc2obj
 
 bc2obj:
 	$(CXX) main.cpp $(CXXFLAGS) -o $(BIN) $(LDFLAGS)
+	ln -sf $(BIN) bc2obj
 
 .PHONY: clean bc2obj
 
