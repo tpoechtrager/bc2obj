@@ -1,4 +1,5 @@
 LLVMCONFIG= llvm-config
+INSTALLPREFIX ?= /usr/local
 
 override CXXFLAGS= $(shell $(LLVMCONFIG) --cxxflags)
 
@@ -30,6 +31,10 @@ all: bc2obj
 bc2obj:
 	$(CXX) main.cpp $(CXXFLAGS) -o $(BIN) $(LDFLAGS)
 	ln -sf $(BIN) bc2obj
+
+install: all
+	mkdir -p $(INSTALLPREFIX)/bin
+	cp $(BIN) bc2obj $(INSTALLPREFIX)/bin
 
 .PHONY: clean bc2obj
 
