@@ -389,6 +389,9 @@ bool processFile(const std::string &File) {
     BitCodeArchive BCAr(File, OK);
     const object::Archive &Archive = BCAr.getArchive();
 
+    if (!OK)
+      return false;
+
     std::vector<std::unique_ptr<NativeCodeGenerator>> Objs;
     std::string ObjName;
 
@@ -416,16 +419,17 @@ bool processFile(const std::string &File) {
 
   NativeCodeGenerator NCodeGen(File, OK, isNativeObjectFile);
 
-  if (OK)
+  if (OK) {
     std::cout << "codegen'ing " << File << " to " << NCodeGen.getOutputPath()
               << std::endl;
 
-  if (!NCodeGen.generateNativeCode()) {
+    if (NCodeGen.generateNativeCode())
+      return true;
+
     std::cerr << "cannot codegen " << File << std::endl;
-    return false;
   }
 
-  return true;
+  return false;
 }
 
 } // end unnamed namespace
