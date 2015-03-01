@@ -41,6 +41,12 @@ cl::opt<bool> DisableVectorizationPass("disable-vectorization-pass",
                                        cl::desc("disable vectorization pass"),
                                        cl::init(false));
 
+cl::list<std::string> LLVMOpts(cl::CommaSeparated, "llvm",
+                               cl::desc("llvm options"));
+
+cl::opt<std::string> Target("target",
+                            cl::desc("override the module target triple"));
+
 cl::opt<bool> PIC("pic", cl::desc("generate position independent code"),
                   cl::init(false));
 
@@ -56,7 +62,8 @@ cl::list<std::string> BitCodeFiles(cl::Sink, cl::OneOrMore);
 cl::opt<std::string> OutDir("out-dir", cl::desc("output directory"),
                             cl::init("native"));
 
-cl::opt<int> NumJobs("j", cl::desc("jobs"), cl::init(getCPUCount()));
+cl::opt<int> NumJobs("j", cl::desc("jobs"), cl::init(getCPUCount()),
+                     cl::Prefix);
 
 namespace {
 
@@ -259,7 +266,10 @@ int main(int argc, char **argv) {
   InitializeAllAsmPrinters();
   InitializeAllAsmParsers();
 
-  std::cout << "using " << NumJobs << " job" << (NumJobs > 1 ? "s" : "")
+  if (NumJobs < 0)
+    NumJobs = 1;
+
+  std::cout << "using " << NumJobs << " job" << (NumJobs != 1 ? "s" : "")
             << std::endl;
 
   for (auto &BitCodeFile : BitCodeFiles) {

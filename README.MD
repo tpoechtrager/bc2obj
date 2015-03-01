@@ -3,7 +3,7 @@
 
 #### REQUIREMENTS: ####
 
-`llvm-3.5+`, `clang or g++`, `make`
+`llvm-3.5+`, `clang++ or g++`, `make`
 
 #### USAGE: ####
 
@@ -17,11 +17,13 @@
     -disable-inline-pass              : disable the inline pass
     -disable-gvn-pass                 : disable the gvn pass
     -disable-vectorization-pass       : disable the vectorization pass
+    -target=<val>                     : override the module target triple
+    -llvm <opts>                      : set llvm options (i.e. -llvm -inline-threshold=1000)
     -pic                              : generate position independent code (shared libraries)
     -pie                              : generate position independent code (executables)
     -cpu=<val>                        : cpu to generate code for
     -attrs=<val>                      : codegen attributes (+sse,+sse2,+mmx,...)
-    -j                                : use multiple jobs (must be '-j <jobs>' NOT '-j<jobs>')
+    -j<val>                           : use <val> jobs
 
 #### SUPPORTED TARGETS ####
 

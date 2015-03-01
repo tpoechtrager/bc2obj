@@ -221,6 +221,9 @@ const char *NativeCodeGenerator::getDefaultTargetCPU() {
 }
 
 bool NativeCodeGenerator::setupCodeGenOpts() {
+  if (!::Target.empty())
+    BCModule.Module->setTargetTriple(::Target.c_str());
+
   std::string errMsg;
 
   if (!CodeGen.addModule(BCModule.Module, errMsg)) {
@@ -238,6 +241,12 @@ bool NativeCodeGenerator::setupCodeGenOpts() {
     case LTO_SYMBOL_DEFINITION_WEAK:
       CodeGen.addMustPreserveSymbol(BCModule.Module->getSymbolName(I));
     }
+  }
+
+  if (!LLVMOpts.empty()) {
+    for (auto LLVMOpt : LLVMOpts)
+      CodeGen.setCodeGenDebugOptions(LLVMOpt.c_str());
+    CodeGen.parseCodeGenDebugOptions();
   }
 
   if (PIC)
