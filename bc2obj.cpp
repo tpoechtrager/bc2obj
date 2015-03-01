@@ -230,8 +230,15 @@ bool NativeCodeGenerator::setupCodeGenOpts() {
 
   uint32_t NumSymbols = BCModule.Module->getSymbolCount();
 
-  for (uint32_t I = 0; I < NumSymbols; ++I)
-    CodeGen.addMustPreserveSymbol(BCModule.Module->getSymbolName(I));
+  for (uint32_t I = 0; I < NumSymbols; ++I) {
+    const auto SymAttr = BCModule.Module->getSymbolAttributes(I);
+    switch (SymAttr & LTO_SYMBOL_DEFINITION_MASK) {
+    case LTO_SYMBOL_DEFINITION_REGULAR:
+    case LTO_SYMBOL_DEFINITION_TENTATIVE:
+    case LTO_SYMBOL_DEFINITION_WEAK:
+      CodeGen.addMustPreserveSymbol(BCModule.Module->getSymbolName(I));
+    }
+  }
 
   if (PIC)
     CodeGen.setCodePICModel(LTO_CODEGEN_PIC_MODEL_DYNAMIC);
