@@ -87,6 +87,7 @@ public:
   };
 
 private:
+  const char *getDefaultTargetCPU();
   bool setupCodeGenOpts();
   void setOutPutPath();
 

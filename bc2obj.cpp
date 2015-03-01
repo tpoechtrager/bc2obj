@@ -177,6 +177,49 @@ bool NativeCodeGenerator::writeCodeToDisk(const std::string &Dir) {
 
 // NativeCodeGenerator -> Private
 
+const char *NativeCodeGenerator::getDefaultTargetCPU() {
+  std::string TripleStr = BCModule.Module->getTargetTriple();
+  if (TripleStr.empty())
+    TripleStr = sys::getDefaultTargetTriple();
+  llvm::Triple Triple(TripleStr);
+
+  if (Triple.isOSDarwin()) {
+    switch (Triple.getArch()) {
+    case llvm::Triple::x86_64:
+      return "core2";
+    case llvm::Triple::x86:
+      return "yonah";
+    case llvm::Triple::aarch64:
+      return "cyclone";
+    default:
+      ;
+    }
+  } else {
+    if (Triple.getArch() == llvm::Triple::x86_64) {
+      return "x86-64";
+    } else if (Triple.getArch() == llvm::Triple::x86) {
+      if (Triple.getEnvironment() == llvm::Triple::Android) {
+        return "i686";
+      } else {
+        switch (Triple.getOS()) {
+        case llvm::Triple::FreeBSD:
+        case llvm::Triple::NetBSD:
+        case llvm::Triple::OpenBSD:
+          return "i486";
+        case llvm::Triple::Haiku:
+          return "i586";
+        case llvm::Triple::Bitrig:
+          return "i686";
+        default:
+          return "pentium4";
+        }
+      }
+    }
+  }
+
+  return "";
+}
+
 bool NativeCodeGenerator::setupCodeGenOpts() {
   std::string errMsg;
 
@@ -197,6 +240,9 @@ bool NativeCodeGenerator::setupCodeGenOpts() {
     CodeGen.setCodePICModel(LTO_CODEGEN_PIC_MODEL_STATIC);
 
   if (CPU.empty())
+    CPU = getDefaultTargetCPU();
+
+  if (!CPU.empty())
     CodeGen.setCpu(CPU.c_str());
 
   if (!Attrs.empty())
