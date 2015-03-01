@@ -24,7 +24,7 @@ override LDFLAGS= $(shell $(LLVMCONFIG) --ldflags --libs --system-libs)
 
 override VERSION= $(shell $(LLVMCONFIG) --version | sed 's/svn//g')
 
-SRCS=main.cpp cpucount.cpp
+SRCS=main.cpp bc2obj.cpp cpucount.cpp
 OBJS=$(subst .cpp,.o,$(SRCS))
 
 BIN= bc2obj-$(VERSION)
