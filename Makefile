@@ -24,19 +24,26 @@ override LDFLAGS= $(shell $(LLVMCONFIG) --ldflags --libs --system-libs)
 
 override VERSION= $(shell $(LLVMCONFIG) --version | sed 's/svn//g')
 
+SRCS=main.cpp cpucount.cpp
+OBJS=$(subst .cpp,.o,$(SRCS))
+
 BIN= bc2obj-$(VERSION)
+BINLINK= bc2obj
 
 all: bc2obj
 
-bc2obj:
-	$(CXX) main.cpp $(CXXFLAGS) -o $(BIN) $(LDFLAGS)
-	ln -sf $(BIN) bc2obj
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+bc2obj: $(OBJS)
+	$(CXX) $(OBJS) -o $(BIN) $(LDFLAGS)
+	ln -sf $(BIN) $(BINLINK)
 
 install: all
 	mkdir -p $(INSTALLPREFIX)/bin
-	cp $(BIN) bc2obj $(INSTALLPREFIX)/bin
+	cp $(BIN) $(BINLINK) $(INSTALLPREFIX)/bin
 
 .PHONY: clean bc2obj
 
 clean:
-	rm -f $(BIN)
+	rm -f $(BIN) $(BINLINK) $(OBJS)

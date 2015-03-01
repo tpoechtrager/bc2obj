@@ -19,6 +19,9 @@
     -disable-vectorization-pass       : disable the vectorization pass
     -pic                              : generate position independent code (shared libraries)
     -pie                              : generate position independent code (executables)
+    -cpu=<val>                        : cpu to generate code for
+    -attrs=<val>                      : codegen attributes (+sse,+sse2,+mmx,...)
+    -j                                : use multiple jobs (must be '-j <jobs>' NOT '-j<jobs>')
 
 #### SUPPORTED TARGETS ####
 
