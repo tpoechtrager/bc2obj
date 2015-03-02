@@ -33,6 +33,7 @@
 
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/TargetSelect.h>
+#include <llvm/Support/Program.h>
 #include <llvm/LTO/LTOModule.h>
 #include <llvm/LTO/LTOCodeGenerator.h>
 #include <llvm/Support/FileUtilities.h>
@@ -57,12 +58,39 @@ extern cl::list<std::string> BitCodeFiles;
 extern cl::opt<std::string> OutDir;
 extern cl::opt<int> NumJobs;
 
+// Misc
+
+#ifdef _WIN32
+#define ONUNIX(b) do { } while (0)
+#else
+#define ONUNIX(b) do { b; } while (0)
+#endif
+
+const char *getFileName(const char *Path);
+
+// Jobs
+
+#ifdef WIN32
+#define childExit(c) do { OK = !c; } while (0)
+#else
+#define childExit(c) do { _exit(c); } while (0)
+#endif
+
+extern int ActiveJobs;
+pid_t forkProcess(bool wait = true, bool *OK = nullptr);
+int waitForChild(const pid_t pid);
+bool waitForJob();
+bool waitForJobs();
+
+// Classes
+
 class BitCodeArchive {
 public:
   BitCodeArchive(const std::string &Path, bool &OK);
   ~BitCodeArchive();
 
   const object::Archive &getArchive() { return *Archive; }
+  static std::string getObjName(const llvm::object::Archive::child_iterator &child);
 
 private:
   ErrorOr<std::unique_ptr<MemoryBuffer>> Buf;

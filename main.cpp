@@ -75,100 +75,47 @@ bool isArchive(const char *Path) {
   return !std::strcmp(Ext, ".a");
 }
 
-int waitForChild(const pid_t pid) {
-#ifndef _WIN32
-  int status;
-
-  if (waitpid(-1, &status, 0) == -1) {
-    std::cerr << "waitpid() failed" << std::endl;
-    std::abort();
-  }
-
-  if (WIFSIGNALED(status)) {
-    std::cerr << "uncaught signal: " << strsignal(WTERMSIG(status))
-              << std::endl;
-    return -1;
-  }
-
-  if (WIFEXITED(status)) {
-    int EC = WEXITSTATUS(status);
-
-    if (EC)
-      return -2;
-  }
-
-  return 1;
-#endif
-}
-
-pid_t forkProcess(bool wait = true, bool *OK = nullptr) {
-#ifndef _WIN32
-  pid_t pid = fork();
-
-  if (pid > 0) {
-    if (wait) {
-      bool V = waitForChild(pid);
-      if (OK)
-        *OK = V;
-    }
-  } else if (pid < 0) {
-    std::cerr << "fork() failed" << std::endl;
-    std::abort();
-  }
-
-  return pid;
-#endif
-}
-
 bool createArchive(const char *ArchiveName,
                    const std::vector<std::string> &Files) {
   bool OK;
 
   if (!forkProcess(true, &OK)) {
-    std::vector<const char *> Args;
-
     std::string OutputFile = OutDir;
     OutputFile += PATH_DIV;
     OutputFile += ArchiveName;
 
-    Args.push_back("llvm-ar");
-    Args.push_back("rcs");
-    Args.push_back(OutputFile.c_str());
-
-    for (auto &File : Files)
-      Args.push_back(File.c_str());
-
-    Args.push_back(nullptr);
-
     std::cout << "generating archive: " << OutputFile << std::endl;
-    execvp(Args[0], const_cast<char **>(Args.data()));
+    std::string Program = sys::FindProgramByName("llvm-ar");
 
-    std::cerr << "llvm-ar not in PATH?" << std::endl;
-    _exit(EXIT_FAILURE);
-  }
-
-  return OK;
-}
-
-int ActiveJobs;
-
-bool waitForJob() {
-  bool OK = true;
-  if (ActiveJobs >= NumJobs) {
-    OK = waitForChild(-1) > 0;
-    ActiveJobs--;
-  }
-  return OK;
-}
-
-bool waitForJobs() {
-  bool OK = true;
-  while (ActiveJobs > 0) {
-    if (waitForChild(-1) <= 0)
+    if (Program.empty()) {
+      std::cerr << "unable to find 'llvm-ar' in PATH" << std::endl;
       OK = false;
-    ActiveJobs--;
+    } else {
+      std::vector<const char *> Args;
+
+      Args.push_back(Program.c_str());
+      Args.push_back("rcs");
+      Args.push_back(OutputFile.c_str());
+
+      for (auto &File : Files)
+        Args.push_back(File.c_str());
+
+      Args.push_back(nullptr);
+
+      std::string errMsg;
+      bool ExecutionFailed = false;
+      OK = sys::ExecuteAndWait(Program.c_str(), Args.data(), nullptr, nullptr,
+                               0, 0, &errMsg, &ExecutionFailed) == 0;
+
+      if (ExecutionFailed)
+        OK = false;
+      else if (!OK)
+        std::cerr << errMsg << std::endl;
+    }
+
+    childExit(!OK);
   }
-  ActiveJobs = 0;
+
   return OK;
 }
 
@@ -194,7 +141,7 @@ bool createNativeArchive(const std::string &File) {
 
   for (auto Obj = Archive.child_begin(); Obj != Archive.child_end(); ++Obj) {
     StringRef Buf = Obj->getBuffer();
-    ObjName = getObjName(Obj);
+    ObjName = BitCodeArchive::getObjName(Obj);
 
     Path = &tmp[0];
     Path += PATH_DIV;
@@ -216,9 +163,9 @@ bool createNativeArchive(const std::string &File) {
 
       bool OK = NCodeGen.generateNativeCodeMemory() &&
                 NCodeGen.writeCodeToDisk(&tmp[0]);
-      NCodeGen.~NativeCodeGenerator();
+      ONUNIX(NCodeGen.~NativeCodeGenerator());
 
-      _exit(!OK);
+      childExit(!OK);
     }
 
     ActiveJobs++;
@@ -251,13 +198,13 @@ int main(int argc, char **argv) {
   cl::ParseCommandLineOptions(argc, argv,
                               "bitcode to native object file converter\n");
 
-  if (sys::fs::create_directory(OutDir)) {
-    std::cerr << "cannot create directory " << OutDir << std::endl;
+  if (BitCodeFiles.empty()) {
+    std::cerr << "no bitcode files specified" << std::endl;
     return 1;
   }
 
-  if (BitCodeFiles.empty()) {
-    std::cerr << "no bitcode files specified" << std::endl;
+  if (sys::fs::create_directory(OutDir)) {
+    std::cerr << "cannot create directory " << OutDir << std::endl;
     return 1;
   }
 
@@ -266,11 +213,11 @@ int main(int argc, char **argv) {
   InitializeAllAsmPrinters();
   InitializeAllAsmParsers();
 
-  if (NumJobs < 0)
+  if (NumJobs <= 0)
     NumJobs = 1;
 
-  std::cout << "using " << NumJobs << " job" << (NumJobs != 1 ? "s" : "")
-            << std::endl;
+  ONUNIX(std::cout << "using " << NumJobs << " job" << (NumJobs != 1 ? "s" : "")
+                   << std::endl);
 
   for (auto &BitCodeFile : BitCodeFiles) {
     bool isFile;
@@ -306,8 +253,8 @@ int main(int argc, char **argv) {
         }
       }
 
-      NCodeGen.~NativeCodeGenerator();
-      _exit(!OK);
+      ONUNIX(NCodeGen.~NativeCodeGenerator());
+      childExit(!OK);
     }
 
     ActiveJobs++;

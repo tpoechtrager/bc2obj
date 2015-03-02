@@ -26,9 +26,9 @@
 #define WIN32
 #endif /* __CYGWIN__ */
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <windows.h>
-#endif /* WIN32 */
+#endif /* _WIN32 */
 
 #ifdef __linux__
 #undef __USE_GNU

@@ -22,6 +22,84 @@
 
 #include "bc2obj.h"
 
+// Misc
+
+const char *getFileName(const char *Path) {
+  const char *FileName = std::strrchr(Path, PATH_DIV);
+  return FileName ? FileName + 1 : Path;
+}
+
+// Jobs
+
+int ActiveJobs;
+
+pid_t forkProcess(bool wait, bool *OK) {
+#ifndef _WIN32
+  pid_t pid = fork();
+
+  if (pid > 0) {
+    if (wait) {
+      bool V = waitForChild(pid) > 0;
+      if (OK)
+        *OK = V;
+    }
+  } else if (pid < 0) {
+    std::cerr << "fork() failed" << std::endl;
+    std::abort();
+  }
+
+  return pid;
+#else
+  if (OK) *OK= true;
+  return 0;
+#endif
+}
+
+int waitForChild(const pid_t pid) {
+#ifndef _WIN32
+  int status;
+
+  if (waitpid(-1, &status, 0) == -1) {
+    std::cerr << "waitpid() failed" << std::endl;
+    std::abort();
+  }
+
+  if (WIFSIGNALED(status)) {
+    std::cerr << "uncaught signal: " << strsignal(WTERMSIG(status))
+              << std::endl;
+    return -1;
+  }
+
+  if (WIFEXITED(status)) {
+    int EC = WEXITSTATUS(status);
+
+    if (EC)
+      return -2;
+  }
+#endif
+  return 1;
+}
+
+bool waitForJob() {
+  bool OK = true;
+  if (ActiveJobs >= NumJobs) {
+    OK = waitForChild(-1) > 0;
+    ActiveJobs--;
+  }
+  return OK;
+}
+
+bool waitForJobs() {
+  bool OK = true;
+  while (ActiveJobs > 0) {
+    if (waitForChild(-1) <= 0)
+      OK = false;
+    ActiveJobs--;
+  }
+  ActiveJobs = 0;
+  return OK;
+}
+
 // BitCodeArchive -> Public
 
 BitCodeArchive::BitCodeArchive(const std::string &Path, bool &OK)
@@ -45,6 +123,17 @@ BitCodeArchive::BitCodeArchive(const std::string &Path, bool &OK)
 }
 
 BitCodeArchive::~BitCodeArchive() { delete Archive; }
+
+std::string
+BitCodeArchive::getObjName(const llvm::object::Archive::child_iterator &child) {
+  llvm::StringRef ObjName;
+  llvm::ErrorOr<llvm::StringRef> Name = child->getName();
+  if (Name.getError())
+    ObjName = "<unknown>";
+  else
+    ObjName = Name.get();
+  return std::string(ObjName.data(), ObjName.size());
+}
 
 // BitCodeModule -> Public
 

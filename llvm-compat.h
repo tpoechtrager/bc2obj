@@ -68,18 +68,12 @@ static auto getMemBuffer = [](auto &Buf) {
 #endif
 };
 
-static inline std::string
-getObjName(const llvm::object::Archive::child_iterator &child) {
-  llvm::StringRef ObjName;
-  llvm::ErrorOr<llvm::StringRef> Name = child->getName();
-  if (Name.getError())
-    ObjName = "<unknown>";
-  else
-    ObjName = Name.get();
-  return std::string(ObjName.data(), ObjName.size());
+#if LLVM_VERSION_AT_LEAST(3, 6)
+namespace llvm {
+namespace sys {
+static inline std::string FindProgramByName(const std::string &name) {
+  return *findProgramByName(name);
 }
-
-static inline const char *getFileName(const char *Path) {
-  const char *FileName = std::strrchr(Path, PATH_DIV);
-  return FileName ? FileName + 1 : Path;
 }
+}
+#endif
