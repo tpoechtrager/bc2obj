@@ -26,8 +26,12 @@
 #define LLVM_VERSION_MINOR CLANG_VERSION_MINOR
 #endif
 
-#define LLVM_VERSION_AT_LEAST(major, minor)                                    \
+#define LLVM_VERSION_GE(major, minor)                                          \
   ((LLVM_VERSION_MAJOR * 10000 + LLVM_VERSION_MINOR * 100) >=                  \
+   (major * 10000 + minor * 100))
+
+#define LLVM_VERSION_LT(major, minor)                                          \
+  ((LLVM_VERSION_MAJOR * 10000 + LLVM_VERSION_MINOR * 100) <                   \
    (major * 10000 + minor * 100))
 
 #define LLVM_VERSION_EQ(major, minor)                                          \
@@ -40,7 +44,7 @@
 #define PATH_DIV '/'
 #endif
 
-#if !LLVM_VERSION_AT_LEAST(3, 6)
+#if LLVM_VERSION_LT(3, 6)
 #define compile_to_file(name, disableOpt, disableInline, disableGVNLoadPRE,    \
                         disableVectorization, errMsg)                          \
   compile_to_file(name, disableOpt, disableInline, disableGVNLoadPRE, errMsg)
@@ -48,12 +52,23 @@
 #define compile(length, disableOpt, disableInline, disableGVNLoadPRE,          \
                 disableVectorization, errMsg)                                  \
   compile(length, disableOpt, disableInline, disableGVNLoadPRE, errMsg)
-#else
+#elif LLVM_VERSION_GE(3, 7)
+#define compile_to_file(name, disableOpt, disableInline, disableGVNLoadPRE,    \
+                        disableVectorization, errMsg)                          \
+  compile_to_file(name, disableInline, disableGVNLoadPRE,                      \
+                  disableVectorization, errMsg)
+
+#define compile(length, disableOpt, disableInline, disableGVNLoadPRE,          \
+                disableVectorization, errMsg)                                  \
+  compile(disableInline, disableGVNLoadPRE, disableVectorization, errMsg)
+#endif
+
+#if LLVM_VERSION_GE(3, 6)
 #define addModule(Module, errMsg) addModule(Module)
 #endif
 
 static auto moveMemBuffer = [](auto &Buf) {
-#if LLVM_VERSION_AT_LEAST(3, 5)
+#if LLVM_VERSION_GE(3, 5)
   return std::move(Buf);
 #else
   return Buf.take();
@@ -61,18 +76,19 @@ static auto moveMemBuffer = [](auto &Buf) {
 };
 
 static auto getMemBuffer = [](auto &Buf) {
-#if LLVM_VERSION_AT_LEAST(3, 6)
+#if LLVM_VERSION_GE(3, 6)
   return Buf.get()->getMemBufferRef();
 #else
   return moveMemBuffer(Buf);
 #endif
 };
 
-#if LLVM_VERSION_AT_LEAST(3, 6)
+#if LLVM_VERSION_GE(3, 6)
 namespace llvm {
 namespace sys {
 static inline std::string FindProgramByName(const std::string &name) {
-  return *findProgramByName(name);
+  auto Prog = findProgramByName(name);
+  return Prog ? *Prog : std::string();
 }
 }
 }

@@ -26,9 +26,11 @@ cl::opt<bool> GenerateDebugSymbols("generate-debug-symbols",
                                    cl::desc("generate debug symbols"),
                                    cl::init(false));
 
+#if LLVM_VERSION_LT(3, 7)
 cl::opt<bool> DisableOptimizations("disable-optimizations",
                                    cl::desc("disable optimizations"),
                                    cl::init(false));
+#endif
 
 cl::opt<bool> DisableInlinePass("disable-inline-pass",
                                 cl::desc("disable inline pass"),
@@ -37,9 +39,16 @@ cl::opt<bool> DisableInlinePass("disable-inline-pass",
 cl::opt<bool> DisableGVNPass("disable-gvn-pass", cl::desc("disable gvn pass"),
                              cl::init(false));
 
+#if LLVM_VERSION_GE(3, 6)
 cl::opt<bool> DisableVectorizationPass("disable-vectorization-pass",
                                        cl::desc("disable vectorization pass"),
                                        cl::init(false));
+#endif
+
+#if LLVM_VERSION_GE(3, 7)
+cl::opt<unsigned> OptLevel("O", cl::desc("optimization level"), cl::init(2),
+                           cl::Prefix);
+#endif
 
 cl::list<std::string> LLVMOpts(cl::CommaSeparated, "llvm",
                                cl::desc("llvm options"));
@@ -56,6 +65,9 @@ cl::opt<bool> PIE("pie", cl::desc("generate position independent code"),
 cl::opt<std::string> CPU("cpu", cl::desc("cpu to generate code for"));
 
 cl::opt<std::string> Attrs("attrs", cl::desc("codegen attrs (+sse, ...)"));
+
+cl::opt<std::string> AR("ar", cl::desc("archiver to use (default: llvm-ar)"),
+                        cl::init("llvm-ar"));
 
 cl::list<std::string> BitCodeFiles(cl::Sink, cl::OneOrMore);
 
@@ -84,11 +96,11 @@ bool createArchive(const char *ArchiveName,
     OutputFile += PATH_DIV;
     OutputFile += ArchiveName;
 
-    std::cout << "generating archive: " << OutputFile << std::endl;
-    std::string Program = sys::FindProgramByName("llvm-ar");
+    msg("generating archive: " << OutputFile);
+    std::string Program = sys::FindProgramByName(AR);
 
     if (Program.empty()) {
-      std::cerr << "unable to find 'llvm-ar' in PATH" << std::endl;
+      errmsg("unable to find '" << AR << "' in PATH");
       OK = false;
     } else {
       std::vector<const char *> Args;
@@ -110,7 +122,7 @@ bool createArchive(const char *ArchiveName,
       if (ExecutionFailed)
         OK = false;
       else if (!OK)
-        std::cerr << errMsg << std::endl;
+        errmsg(errMsg);
     }
 
     childExit(!OK);
@@ -131,7 +143,7 @@ bool createNativeArchive(const std::string &File) {
   SmallVector<char, 32> tmp;
 
   if (sys::fs::createUniqueDirectory("", tmp)) {
-    std::cerr << "cannot create temporary directory" << std::endl;
+    errmsg("cannot create temporary directory");
     return false;
   }
 
@@ -140,8 +152,15 @@ bool createNativeArchive(const std::string &File) {
   std::string ObjName;
 
   for (auto Obj = Archive.child_begin(); Obj != Archive.child_end(); ++Obj) {
-    StringRef Buf = Obj->getBuffer();
+    auto Buf = Obj->getBuffer();
     ObjName = BitCodeArchive::getObjName(Obj);
+    
+#if LLVM_VERSION_GE(3, 7)
+    OK = !Buf.getError();
+    llvm::StringRef StrBuf = *Buf;
+#else
+    llvm::StringRef &StrBuf = Buf;
+#endif
 
     Path = &tmp[0];
     Path += PATH_DIV;
@@ -152,11 +171,10 @@ bool createNativeArchive(const std::string &File) {
     if (!OK)
       break;
 
-    std::cout << "codegen'ing " << File << "(" << ObjName << ") to " << Path
-              << std::endl;
+    msg("codegen'ing " << File << "(" << ObjName << ") to " << Path);
 
     if (!forkProcess(false)) {
-      NativeCodeGenerator NCodeGen(ObjName, Buf, OK, isNativeObjectFile);
+      NativeCodeGenerator NCodeGen(ObjName, StrBuf, OK, isNativeObjectFile);
 
       if (!OK)
         return false;
@@ -184,7 +202,7 @@ bool createNativeArchive(const std::string &File) {
 
   for (auto &File : Files) {
     if (sys::fs::remove(File.c_str())) {
-      std::cerr << File << ": cannot remove file" << std::endl;
+      errmsg(File << ": cannot remove file");
       OK = false;
     }
   }
@@ -197,14 +215,20 @@ bool createNativeArchive(const std::string &File) {
 int main(int argc, char **argv) {
   cl::ParseCommandLineOptions(argc, argv,
                               "bitcode to native object file converter\n");
-
   if (BitCodeFiles.empty()) {
-    std::cerr << "no bitcode files specified" << std::endl;
+    errmsg("no bitcode files specified");
     return 1;
   }
 
+  for (auto &BCFile : BitCodeFiles) {
+    if (!BCFile.empty() && BCFile[0] == '-') {
+      errmsg("unknown option: " << BCFile);
+      return 1;
+    }
+  }
+
   if (sys::fs::create_directory(OutDir)) {
-    std::cerr << "cannot create directory " << OutDir << std::endl;
+    errmsg("cannot create directory " << OutDir);
     return 1;
   }
 
@@ -216,14 +240,13 @@ int main(int argc, char **argv) {
   if (NumJobs <= 0)
     NumJobs = 1;
 
-  ONUNIX(std::cout << "using " << NumJobs << " job" << (NumJobs != 1 ? "s" : "")
-                   << std::endl);
+  ONUNIX(errmsg("using " << NumJobs << " job" << (NumJobs != 1 ? "s" : "")));
 
   for (auto &BitCodeFile : BitCodeFiles) {
     bool isFile;
 
     if (sys::fs::is_regular_file(BitCodeFile, isFile) || !isFile) {
-      std::cerr << BitCodeFile << ": is not a file" << std::endl;
+      errmsg(BitCodeFile << ": is not a file");
       return 1;
     }
 
@@ -244,11 +267,11 @@ int main(int argc, char **argv) {
       NativeCodeGenerator NCodeGen(BitCodeFile, OK, isNativeObjectFile);
 
       if (OK) {
-        std::cout << "codegen'ing " << BitCodeFile << " to "
-                  << NCodeGen.getOutputPath() << std::endl;
+        msg("codegen'ing " << BitCodeFile << " to "
+                           << NCodeGen.getOutputPath());
 
         if (!NCodeGen.generateNativeCode()) {
-          std::cerr << "cannot codegen " << BitCodeFile << std::endl;
+          errmsg("cannot codegen " << BitCodeFile);
           return 1;
         }
       }

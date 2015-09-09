@@ -50,7 +50,8 @@ pid_t forkProcess(bool wait, bool *OK) {
 
   return pid;
 #else
-  if (OK) *OK= true;
+  if (OK)
+    *OK = true;
   return 0;
 #endif
 }
@@ -142,6 +143,7 @@ BitCodeModule::BitCodeModule(const std::string &Path, bool &OK)
   std::string errMsg;
   Module = LTOModule::createFromFile(Path.c_str(), TargetOpts, errMsg);
   check(errMsg, Path, OK);
+  setTriple(OK);
 }
 
 BitCodeModule::BitCodeModule(const std::string &Path, StringRef Data, bool &OK)
@@ -150,6 +152,7 @@ BitCodeModule::BitCodeModule(const std::string &Path, StringRef Data, bool &OK)
   Module =
       LTOModule::createFromBuffer(Data.data(), Data.size(), TargetOpts, errMsg);
   check(errMsg, Path, OK);
+  setTriple(OK);
 }
 
 BitCodeModule::~BitCodeModule() { delete Module; }
@@ -166,6 +169,20 @@ void BitCodeModule::check(const std::string &errMsg, const std::string &Path,
 
     std::cerr << Path << ": " << errMsg << std::endl;
   }
+}
+
+void BitCodeModule::setTriple(bool &OK) {
+  if (!OK)
+    return;
+
+  TripleStr = Module->getTargetTriple();
+
+  if (TripleStr.empty()) {
+    OK = false;
+    return;
+  }
+
+  Triple = llvm::Triple(TripleStr);
 }
 
 // NativeCodeGenerator -> Public
@@ -209,13 +226,16 @@ bool NativeCodeGenerator::generateNativeCode() {
   if (!CodeGen.compile_to_file(&name, DisableOptimizations, DisableInlinePass,
                                DisableGVNPass, DisableVectorizationPass,
                                errMsg)) {
-    std::cerr << Path << ":" << errMsg << std::endl;
+    errmsg(Path << ":" << errMsg);
     return false;
   }
 
   if (sys::fs::rename(name, OutPath)) {
-    std::cerr << "cannot rename " << name << " to " << OutPath << std::endl;
-    return false;
+    if (errno != EXDEV || sys::fs::copy_file(name, OutPath) ||
+      sys::fs::remove(name)) {
+      errmsg("cannot rename " << name << " to " << OutPath);
+      return false;
+    }
   }
 
   return true;
@@ -233,12 +253,24 @@ bool NativeCodeGenerator::generateNativeCodeMemory() {
   if (!setupCodeGenOpts())
     return false;
 
-  code.Code =
+  auto CodeBuf =
       CodeGen.compile(&code.Length, DisableOptimizations, DisableInlinePass,
                       DisableGVNPass, DisableVectorizationPass, errMsg);
 
+#if LLVM_VERSION_GE(3, 7)
+  if (auto *MemBuffer = CodeBuf.get()) {
+    code.CodeBuf = std::move(CodeBuf);
+    code.Code = MemBuffer;
+    code.Length = MemBuffer->getBufferSize();
+  } else {
+    code.Code = nullptr;
+  }
+#else
+  code.Code = CodeBuf;
+#endif
+
   if (!code.Code) {
-    std::cerr << Path << ":" << errMsg << std::endl;
+    errmsg(Path << ":" << errMsg);
     return false;
   }
 
@@ -254,7 +286,7 @@ bool NativeCodeGenerator::writeCodeToDisk(const std::string &Dir) {
 
   int fd;
   if (sys::fs::openFileForWrite(Path, fd, sys::fs::F_RW)) {
-    std::cerr << Path << ": cannot open file for writing" << std::endl;
+    errmsg(Path << ": cannot open file for writing");
     return false;
   }
 
@@ -266,38 +298,35 @@ bool NativeCodeGenerator::writeCodeToDisk(const std::string &Dir) {
 
 // NativeCodeGenerator -> Private
 
-const char *NativeCodeGenerator::getDefaultTargetCPU() {
-  std::string TripleStr = BCModule.Module->getTargetTriple();
-  if (TripleStr.empty())
-    TripleStr = sys::getDefaultTargetTriple();
-  llvm::Triple Triple(TripleStr);
+const char *NativeCodeGenerator::getDefaultTargetCPU() const {
+  const auto &Triple = BCModule.Triple;
 
   if (Triple.isOSDarwin()) {
     switch (Triple.getArch()) {
-    case llvm::Triple::x86_64:
+    case Triple::x86_64:
       return "core2";
-    case llvm::Triple::x86:
+    case Triple::x86:
       return "yonah";
-    case llvm::Triple::aarch64:
+    case Triple::aarch64:
       return "cyclone";
     default:
       ;
     }
   } else {
-    if (Triple.getArch() == llvm::Triple::x86_64) {
+    if (Triple.getArch() == Triple::x86_64) {
       return "x86-64";
-    } else if (Triple.getArch() == llvm::Triple::x86) {
-      if (Triple.getEnvironment() == llvm::Triple::Android) {
+    } else if (Triple.getArch() == Triple::x86) {
+      if (Triple.getEnvironment() == Triple::Android) {
         return "i686";
       } else {
         switch (Triple.getOS()) {
-        case llvm::Triple::FreeBSD:
-        case llvm::Triple::NetBSD:
-        case llvm::Triple::OpenBSD:
+        case Triple::FreeBSD:
+        case Triple::NetBSD:
+        case Triple::OpenBSD:
           return "i486";
-        case llvm::Triple::Haiku:
+        case Triple::Haiku:
           return "i586";
-        case llvm::Triple::Bitrig:
+        case Triple::Bitrig:
           return "i686";
         default:
           return "pentium4";
@@ -310,13 +339,18 @@ const char *NativeCodeGenerator::getDefaultTargetCPU() {
 }
 
 bool NativeCodeGenerator::setupCodeGenOpts() {
-  if (!::Target.empty())
+  if (!::Target.empty()) {
+    bool OK = true;
     BCModule.Module->setTargetTriple(::Target.c_str());
+    BCModule.setTriple(OK);
+    if (!OK)
+      return false;
+  }
 
   std::string errMsg;
 
   if (!CodeGen.addModule(BCModule.Module, errMsg)) {
-    std::cerr << errMsg << std::endl;
+    errmsg(errMsg);
     return false;
   }
 
@@ -338,11 +372,20 @@ bool NativeCodeGenerator::setupCodeGenOpts() {
     CodeGen.parseCodeGenDebugOptions();
   }
 
-  if (PIC)
-    CodeGen.setCodePICModel(LTO_CODEGEN_PIC_MODEL_DYNAMIC);
+  bool isOSWindows = (PIC || PIE) && BCModule.Triple.isOSWindows();
 
-  if (PIE)
-    CodeGen.setCodePICModel(LTO_CODEGEN_PIC_MODEL_STATIC);
+  if (PIC && isOSWindows) {
+    errmsg("warning: " << Path << ": '-pic' has no effect for target "
+                       << BCModule.TripleStr << '\'');
+  } else if (PIE && isOSWindows) {
+    errmsg("warning: " << Path << ": '-pie' has no effect for target '"
+                       << BCModule.TripleStr << '\'');
+  } else {
+    if (PIC)
+      CodeGen.setCodePICModel(LTO_CODEGEN_PIC_MODEL_DYNAMIC);
+    if (PIE)
+      CodeGen.setCodePICModel(LTO_CODEGEN_PIC_MODEL_STATIC);
+  }
 
   if (CPU.empty())
     CPU = getDefaultTargetCPU();
@@ -352,6 +395,11 @@ bool NativeCodeGenerator::setupCodeGenOpts() {
 
   if (!Attrs.empty())
     CodeGen.setAttr(Attrs.c_str());
+
+#if LLVM_VERSION_GE(3, 7)
+  if (OptLevel != 2)
+    CodeGen.setOptLevel(OptLevel);
+#endif
 
   CodeGen.setDebugInfo(GenerateDebugSymbols ? LTO_DEBUG_MODEL_DWARF
                                             : LTO_DEBUG_MODEL_NONE);

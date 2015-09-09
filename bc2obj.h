@@ -38,6 +38,7 @@
 #include <llvm/LTO/LTOCodeGenerator.h>
 #include <llvm/Support/FileUtilities.h>
 #include <llvm/Object/Archive.h>
+
 #include "llvm-compat.h"
 #include "cpucount.h"
 
@@ -45,9 +46,11 @@ using namespace llvm;
 
 extern cl::opt<bool> GenerateDebugSymbols;
 extern cl::opt<bool> DisableOptimizations;
+extern cl::opt<bool> DisableOptimizations;
 extern cl::opt<bool> DisableInlinePass;
 extern cl::opt<bool> DisableGVNPass;
 extern cl::opt<bool> DisableVectorizationPass;
+extern cl::opt<unsigned> OptLevel;
 extern cl::list<std::string> LLVMOpts;
 extern cl::opt<std::string> Target;
 extern cl::opt<bool> PIC;
@@ -60,10 +63,27 @@ extern cl::opt<int> NumJobs;
 
 // Misc
 
+#define errmsg(...)                                                            \
+  do {                                                                         \
+    errs() << __VA_ARGS__ << '\n';                                             \
+    errs().flush();                                                            \
+  } while (0)
+
+#define msg(...)                                                               \
+  do {                                                                         \
+    outs() << __VA_ARGS__ << '\n';                                             \
+    outs().flush();                                                            \
+  } while (0)
+
 #ifdef _WIN32
-#define ONUNIX(b) do { } while (0)
+#define ONUNIX(b)                                                              \
+  do {                                                                         \
+  } while (0)
 #else
-#define ONUNIX(b) do { b; } while (0)
+#define ONUNIX(b)                                                              \
+  do {                                                                         \
+    b;                                                                         \
+  } while (0)
 #endif
 
 const char *getFileName(const char *Path);
@@ -71,9 +91,15 @@ const char *getFileName(const char *Path);
 // Jobs
 
 #ifdef WIN32
-#define childExit(c) do { OK = !c; } while (0)
+#define childExit(c)                                                           \
+  do {                                                                         \
+    OK = !c;                                                                   \
+  } while (0)
 #else
-#define childExit(c) do { _exit(c); } while (0)
+#define childExit(c)                                                           \
+  do {                                                                         \
+    _exit(c);                                                                  \
+  } while (0)
 #endif
 
 extern int ActiveJobs;
@@ -90,7 +116,8 @@ public:
   ~BitCodeArchive();
 
   const object::Archive &getArchive() { return *Archive; }
-  static std::string getObjName(const llvm::object::Archive::child_iterator &child);
+  static std::string
+  getObjName(const llvm::object::Archive::child_iterator &child);
 
 private:
   ErrorOr<std::unique_ptr<MemoryBuffer>> Buf;
@@ -107,10 +134,13 @@ public:
 
 private:
   void check(const std::string &errMsg, const std::string &Path, bool &OK);
+  void setTriple(bool &OK);
 
   bool isNativeObjectFile;
   TargetOptions TargetOpts;
   LTOModule *Module;
+  std::string TripleStr;
+  llvm::Triple Triple;
 };
 
 class NativeCodeGenerator {
@@ -134,12 +164,15 @@ public:
   const char *getOutputPath() { return OutPath.c_str(); }
 
   struct Code {
+#if LLVM_VERSION_GE(3, 7)
+    std::unique_ptr<MemoryBuffer> CodeBuf;
+#endif
     const void *Code;
     size_t Length;
   };
 
 private:
-  const char *getDefaultTargetCPU();
+  const char *getDefaultTargetCPU() const;
   bool setupCodeGenOpts();
   void setOutPutPath();
 

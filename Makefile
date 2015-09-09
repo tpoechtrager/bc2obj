@@ -4,11 +4,19 @@ WIN32CROSS ?=
 LN= ln -sf
 
 ifeq ($(WIN32CROSS), 1)
-	CXX= w32-clang++
-	LDFLAGS+= -wc-static-runtime
-	LLVMCONFIG= /opt/compiler/llvm-3.6-windows-i686/bin/llvm-config-host
+	CXX= i686-w64-mingw32-g++
+	LDFLAGS+= -static-libgcc -static-libstdc++
+	LLVMCONFIG= /usr/i686-w64-mingw32/bin/i686-w64-mingw32-llvm-config-host
 	EXESUFFIX=.exe
 	LN= cp -r
+endif
+
+ifeq ($(WIN64CROSS), 1)
+    CXX= x86_64-w64-mingw32-g++
+    LDFLAGS+= -static-libgcc -static-libstdc++
+    LLVMCONFIG= /usr/x86_64-w64-mingw32/bin/x86_64-w64-mingw32-llvm-config-host
+    EXESUFFIX=.exe
+    LN= cp -r
 endif
 
 override CXXFLAGS+= $(shell $(LLVMCONFIG) --cxxflags)
@@ -28,7 +36,8 @@ override CXXFLAGS:= $(shell echo $(CXXFLAGS) | sed 's/-O3//g')
 override CXXFLAGS:= $(shell echo $(CXXFLAGS) | sed 's/-Os//g')
 override CXXFLAGS:= $(shell echo $(CXXFLAGS) | sed 's/-Oz//g')
 override CXXFLAGS:= $(shell echo $(CXXFLAGS) | sed 's/-Og//g')
-override CXXFLAGS+= -fno-rtti -std=c++1y -O3 -g
+override CXXFLAGS:= $(shell echo $(CXXFLAGS) | sed 's/-g//g')
+override CXXFLAGS+= -fno-rtti -std=c++1y -O3 #-O0 -g
 
 override LDFLAGS+= $(shell $(LLVMCONFIG) --ldflags --libs --system-libs)
 
