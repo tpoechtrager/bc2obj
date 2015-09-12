@@ -166,7 +166,8 @@ bool createNativeArchive(const std::string &File) {
     Path += PATH_DIV;
     Path += ObjName;
 
-    OK = waitForJob();
+    if (OK)
+      OK = waitForJob();
 
     if (!OK)
       break;

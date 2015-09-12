@@ -260,7 +260,7 @@ bool NativeCodeGenerator::generateNativeCodeMemory() {
 #if LLVM_VERSION_GE(3, 7)
   if (auto *MemBuffer = CodeBuf.get()) {
     code.CodeBuf = std::move(CodeBuf);
-    code.Code = MemBuffer;
+    code.Code = MemBuffer->getBufferStart();
     code.Length = MemBuffer->getBufferSize();
   } else {
     code.Code = nullptr;
